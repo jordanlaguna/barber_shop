@@ -1,0 +1,48 @@
+name: barber_shop
+description: "A new Flutter project."
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_nav_bar: ^5.0.7
+  line_icons: ^2.0.3
+  flutter_native_splash: ^2.4.6
+  firebase_core: ^4.2.1
+  firebase_messaging: ^16.0.4
+  firebase_auth: ^6.1.2
+  google_sign_in: ^6.2.2
+  cloud_firestore: ^6.1.0
+  intl: ^0.19.0
+  table_calendar: ^3.0.9
+  googleapis_auth: ^2.0.0
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logos/
+    - assets/cuts/
+    - assets/avatars/
+    - assets/services_account_file.json
+
+flutter_native_splash:
+  color: "#00BCD4"
+  image: assets/logos/Logo_splash.png
+  android: true
+  ios: true
+
+  android_12:
+    image: assets/logos/Logo_splash.png
+    icon_background_color: "#00BCD4"

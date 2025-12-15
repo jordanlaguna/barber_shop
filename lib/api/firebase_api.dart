@@ -34,15 +34,26 @@ class FirebaseApi {
     FirebaseMessaging.onMessage.listen(handleMessage);
   }
 
-  // this method is send a notification push
-  Future<void> sendNotificationToAllUsers(String title, String message) async {
-    final userSnapshot =
-        await FirebaseFirestore.instance.collection('user').get();
+  // this method is send a notification push to barber only
+  Future<void> sendNotificationToAllUsers(
+    String title,
+    String message,
+    String s,
+  ) async {
+    final barberSnapshot =
+        await FirebaseFirestore.instance
+            .collection('user')
+            .where('role', isEqualTo: 'barber')
+            .get();
     final tokens =
-        userSnapshot.docs
+        barberSnapshot.docs
             .map((doc) => doc.data()['fcmToken'] as String?)
             .where((token) => token != null)
             .toList();
+    if (tokens.isEmpty) {
+      print('No hay tokens de FCM disponibles para enviar notificaciones.');
+      return;
+    }
     for (String? token in tokens) {
       if (token != null) {
         final playload = constructFCMPayload(token, title, message);
@@ -94,7 +105,7 @@ class FirebaseApi {
   }
 
   Future<String> _getAccessToken() async {
-    const serviceAccountPath = 'assets/services_account_file.json';
+    const serviceAccountPath = 'backend/services_account_file.json';
     try {
       final serviceAccountJson = await rootBundle.loadString(
         serviceAccountPath,

@@ -1,6 +1,6 @@
 class Appointment {
   final String id;
-  final String clientId; // uid del cliente
+  final String clientId;
   final String clientName;
   final String barberId;
   final DateTime date;

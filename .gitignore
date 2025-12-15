@@ -32,7 +32,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-assets/services_account_file.json
+backend/services_account_file.json
 
 # Symbolication related
 app.*.symbols

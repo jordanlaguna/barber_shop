@@ -1,8 +1,8 @@
 import 'package:barber_shop/authentication/screen/login.dart';
 import 'package:barber_shop/screens/navbar/slider_drawer/help/help.dart';
-import 'package:barber_shop/screens/navbar/slider_drawer/notification/notification.dart';
 import 'package:barber_shop/screens/navbar/slider_drawer/prices/prices.dart';
 import 'package:barber_shop/screens/navbar/slider_drawer/settings/settings.dart';
+import 'package:barber_shop/screens/navbar/slider_drawer/notification/screen/notification.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -98,7 +98,7 @@ class _NavBarState extends State<NavBar> {
                   context,
                   Icons.notification_add_rounded,
                   'Notificaciones',
-                  const NotificationPage(),
+                  const NotificacionPageDrawer(),
                 ),
                 buildListTile(context, Icons.help, 'Ayuda', const HelpPage()),
                 buildListTile(

@@ -1,5 +1,5 @@
-import 'package:barber_shop/screens/navbar/slider_drawer/notification/notification.dart';
 import 'package:barber_shop/screens/profile/screen/my_profile_information.dart';
+import 'package:barber_shop/screens/profile/screen/notification_page.dart';
 import 'package:flutter/material.dart';
 
 class ProfilePage extends StatelessWidget {

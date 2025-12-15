@@ -35,7 +35,7 @@ flutter:
     - assets/logos/
     - assets/cuts/
     - assets/avatars/
-    - assets/services_account_file.json
+    - backend/services_account_file.json
 
 flutter_native_splash:
   color: "#00BCD4"

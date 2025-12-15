@@ -21,7 +21,7 @@ Future<void> main() async {
 
   try {
     final String jsonString = await rootBundle.loadString(
-      'assets/services_account_file.json',
+      'backend/services_account_file.json',
     );
     final Map<String, dynamic> jsonData = jsonDecode(jsonString);
     print(jsonData);

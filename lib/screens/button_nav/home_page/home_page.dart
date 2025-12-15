@@ -24,7 +24,7 @@ class _HomePageState extends State<HomePage> {
       "name": "Degradado alto",
       "type": "Corte moderno",
       "image": "assets/cuts/degradado_alto.png",
-      "barberName": "Popa Laguna",
+      "barberName": "Popa Barber",
       "avatar": "assets/logos/Logo_splash.png",
       "createdAt": DateTime.now().subtract(Duration(hours: 3)),
       "likes": 24,

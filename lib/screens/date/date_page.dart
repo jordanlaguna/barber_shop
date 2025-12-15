@@ -1,6 +1,11 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:barber_shop/api/firebase_api.dart';
+import 'package:barber_shop/services/appointment/appointment_service.dart';
+import 'package:barber_shop/services/appointment/barber_service.dart';
+import 'package:barber_shop/services/appointment/user_service.dart';
+import 'package:barber_shop/utils/date_utils.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class DatePage extends StatefulWidget {
@@ -12,19 +17,19 @@ class DatePage extends StatefulWidget {
 
 class _DatePageState extends State<DatePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  final AppointmentService _appointmentService = AppointmentService();
+  final UserService _userService = UserService();
+  final BarberService _barberService = BarberService();
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  DateTime normalizeDate(DateTime date) {
-    return DateTime(date.year, date.month, date.day, 12);
-  }
 
-  DateTime onlyDate(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  List<String> bookedHours = [];
+  String? selectedBarberId;
   String? selectedHour;
   String? errorHour;
+
+  List<String> bookedHours = [];
 
   final List<String> hours = [
     "8:00 AM",
@@ -40,176 +45,96 @@ class _DatePageState extends State<DatePage> {
   ];
 
   Future<void> fetchBookedHours(DateTime date) async {
-    final start = normalizeDate(date);
-    final end = start.add(const Duration(days: 1));
-
-    final query =
-        await _firestore
-            .collection('appointments')
-            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-            .where('date', isLessThan: Timestamp.fromDate(end))
-            .where('status', isEqualTo: 'pendiente')
-            .get();
-
-    setState(() {
-      bookedHours = query.docs.map((doc) => doc['hour'] as String).toList();
-    });
-  }
-
-  Future<Map<String, dynamic>?> getUserData(String? uid) async {
-    if (uid == null) return null;
-    try {
-      DocumentSnapshot<Map<String, dynamic>> userData =
-          await _firestore.collection('user').doc(uid).get();
-      return userData.data();
-    } catch (e) {
-      print('Error al obtener datos del usuario: $e');
-      return null;
-    }
-  }
-
-  Future<bool> isHourBooked(DateTime day, String hour) async {
-    final normalizedDate = DateTime(day.year, day.month, day.day, 12);
-    final nextDay = normalizedDate.add(const Duration(days: 1));
-
-    final query =
-        await _firestore
-            .collection('appointments')
-            .where(
-              'date',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
-            )
-            .where('date', isLessThan: Timestamp.fromDate(nextDay))
-            .where('hour', isEqualTo: hour)
-            .where('status', isEqualTo: 'pendiente')
-            .limit(1)
-            .get();
-
-    return query.docs.isNotEmpty;
-  }
-
-  DateTime hourStringToDateTime(DateTime day, String hour) {
-    final parts = hour.split(' ');
-    final time = parts[0];
-    final period = parts[1];
-
-    final hourMinute = time.split(':');
-    int h = int.parse(hourMinute[0]);
-    final int m = int.parse(hourMinute[1]);
-
-    if (period == 'PM' && h != 12) h += 12;
-    if (period == 'AM' && h == 12) h = 0;
-
-    return DateTime(day.year, day.month, day.day, h, m);
-  }
-
-  bool isDayInPast(DateTime selectedDay) {
-    final today = onlyDate(DateTime.now());
-    final day = onlyDate(selectedDay);
-    return day.isBefore(today);
-  }
-
-  bool isHourInPast(DateTime selectedDay, String hour) {
-    if (isDayInPast(selectedDay)) return true;
-    final now = DateTime.now();
-    if (!isSameDay(selectedDay, now)) return false;
-    final hourDate = hourStringToDateTime(selectedDay, hour);
-    return hourDate.isBefore(now);
+    final result = await _appointmentService.getBookedHours(date);
+    setState(() => bookedHours = result);
   }
 
   Future<void> confirmAppointment() async {
     final user = _auth.currentUser;
-    if (user == null) return;
-
-    if (_selectedDay == null || selectedHour == null) return;
+    if (user == null ||
+        _selectedDay == null ||
+        selectedHour == null ||
+        selectedBarberId == null) {
+      return;
+    }
 
     try {
-      final normalizedDate = normalizeDate(_selectedDay!);
-      final nextDay = normalizedDate.add(const Duration(days: 1));
-      final hourExists =
-          await _firestore
-              .collection('appointments')
-              .where(
-                'date',
-                isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
-              )
-              .where('date', isLessThan: Timestamp.fromDate(nextDay))
-              .where('hour', isEqualTo: selectedHour)
-              .where('status', isEqualTo: 'pendiente')
-              .limit(1)
-              .get();
+      final hasAppointment = await _appointmentService
+          .userHasPendingAppointment(user.uid, _selectedDay!);
 
-      if (hourExists.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Esta hora ya fue reservada"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-      final userDayQuery =
-          await _firestore
-              .collection('appointments')
-              .where('clientId', isEqualTo: user.uid)
-              .where(
-                'date',
-                isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
-              )
-              .where('date', isLessThan: Timestamp.fromDate(nextDay))
-              .where('status', isEqualTo: 'pendiente')
-              .limit(1)
-              .get();
-
-      if (userDayQuery.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Ya tienes una cita pendiente para este día"),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (hasAppointment) {
+        _showSnack("Ya tienes una cita pendiente para este día", Colors.orange);
         return;
       }
 
-      final userData = await getUserData(user.uid);
-      final clientName = userData?['name'] ?? 'Cliente';
-
-      await _firestore.collection('appointments').add({
-        "clientId": user.uid,
-        "clientName": clientName,
-        "date": Timestamp.fromDate(normalizedDate),
-        "hour": selectedHour,
-        "status": "pendiente",
-        "createdAt": Timestamp.now(),
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Cita reservada con éxito"),
-          backgroundColor: Colors.green,
-        ),
+      final hourBooked = await _appointmentService.isHourBooked(
+        _selectedDay!,
+        selectedHour!,
       );
 
-      setState(() {
-        selectedHour = null;
-      });
+      if (hourBooked) {
+        _showSnack("Esta hora ya fue reservada", Colors.red);
+        return;
+      }
 
+      final userData = await _userService.getUserData(user.uid);
+      final clientName = userData?['name'] ?? 'Cliente';
+
+      await _appointmentService.createAppointment(
+        barberId: selectedBarberId!,
+        clientId: user.uid,
+        clientName: clientName,
+        day: _selectedDay!,
+        hour: selectedHour!,
+      );
+
+      _showSnack("Cita reservada con éxito", Colors.green);
+
+      final apiFirebase = FirebaseApi();
+      await apiFirebase.sendNotificationToAllUsers(
+        "Nueva cita reservada",
+        "El cliente $clientName ha reservado una nueva cita.",
+        "Para el día ${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year} a las $selectedHour",
+      );
+
+      setState(() => selectedHour = null);
       fetchBookedHours(_selectedDay!);
     } catch (e) {
       debugPrint("Error guardando cita: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Error al guardar la cita"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnack("Error al guardar la cita", Colors.red);
     }
+  }
+
+  void _showSnack(String message, Color color) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xfff4f9ff),
+
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
+      floatingActionButton: FloatingActionButton(
+        backgroundColor:
+            (_selectedDay != null &&
+                    selectedHour != null &&
+                    selectedBarberId != null)
+                ? Colors.cyan
+                : Colors.grey.shade400,
+        elevation: 6,
+        onPressed:
+            (_selectedDay != null &&
+                    selectedHour != null &&
+                    selectedBarberId != null)
+                ? confirmAppointment
+                : null,
+        child: const Icon(Icons.check, color: Colors.white, size: 28),
+      ),
+
       body: Stack(
         children: [
           Container(
@@ -238,228 +163,39 @@ class _DatePageState extends State<DatePage> {
                 const SizedBox(height: 20),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
                     child: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: TableCalendar(
-                            locale: 'es_ES',
-                            firstDay: DateTime.utc(2020),
-                            lastDay: DateTime.utc(2030),
-                            enabledDayPredicate: (day) {
-                              return !isDayInPast(day);
-                            },
-                            focusedDay: _focusedDay,
-                            selectedDayPredicate:
-                                (day) => isSameDay(_selectedDay, day),
-                            onDaySelected: (selected, focused) {
-                              setState(() {
-                                _selectedDay = selected;
-                                _focusedDay = focused;
-                                selectedHour = null;
-                                errorHour = null;
-                              });
-                              fetchBookedHours(selected);
-                            },
+                        _buildCalendar(),
+                        const SizedBox(height: 15),
 
-                            calendarStyle: CalendarStyle(
-                              todayDecoration: BoxDecoration(
-                                color: Colors.cyan.withOpacity(0.4),
-                                shape: BoxShape.circle,
-                              ),
-                              selectedDecoration: const BoxDecoration(
-                                color: Colors.cyan,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            headerStyle: const HeaderStyle(
-                              titleCentered: true,
-                              formatButtonVisible: false,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 25),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(
+                          child: const Text(
+                            "Seleccione un barbero",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Montserrat',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        _buildBarbers(),
+                        const SizedBox(height: 15),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: const Text(
                             "Horas disponibles",
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
+                              fontFamily: 'Montserrat',
                             ),
                           ),
                         ),
-                        const SizedBox(height: 15),
-                        Column(
-                          children:
-                              hours
-                                  .where(
-                                    (hour) =>
-                                        _selectedDay != null &&
-                                        !isHourInPast(_selectedDay!, hour),
-                                  )
-                                  .map((hour) {
-                                    final bool isSelected =
-                                        selectedHour == hour;
-                                    final bool isError = errorHour == hour;
-
-                                    return GestureDetector(
-                                      onTap: () async {
-                                        if (_selectedDay == null) return;
-
-                                        // Extra: si es una hora pasada (por si acaso), no dejes tocarla
-                                        if (isHourInPast(_selectedDay!, hour)) {
-                                          setState(() {
-                                            selectedHour = null;
-                                            errorHour = hour;
-                                          });
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "Esta hora ya pasó",
-                                              ),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
-                                          return;
-                                        }
-
-                                        final booked = await isHourBooked(
-                                          _selectedDay!,
-                                          hour,
-                                        );
-
-                                        setState(() {
-                                          if (booked) {
-                                            selectedHour = null;
-                                            errorHour = hour;
-                                          } else {
-                                            selectedHour = hour;
-                                            errorHour = null;
-                                          }
-                                        });
-
-                                        if (booked) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "Esta hora ya fue reservada",
-                                              ),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
-                                        }
-                                      },
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 200,
-                                        ),
-                                        margin: const EdgeInsets.only(
-                                          bottom: 12,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 14,
-                                          horizontal: 18,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              isError
-                                                  ? Colors.red.shade50
-                                                  : isSelected
-                                                  ? Colors.cyan
-                                                  : Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.06,
-                                              ),
-                                              blurRadius: 6,
-                                              offset: const Offset(0, 3),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.access_time,
-                                              color:
-                                                  isError
-                                                      ? Colors.redAccent
-                                                      : isSelected
-                                                      ? Colors.white
-                                                      : Colors.cyan,
-                                            ),
-                                            const SizedBox(width: 14),
-                                            Text(
-                                              hour,
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w600,
-                                                color:
-                                                    isError
-                                                        ? Colors.redAccent
-                                                        : isSelected
-                                                        ? Colors.white
-                                                        : Colors.black,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            if (isError)
-                                              const Icon(
-                                                Icons.error,
-                                                color: Colors.redAccent,
-                                              )
-                                            else if (isSelected)
-                                              const Icon(
-                                                Icons.check_circle,
-                                                color: Colors.white,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  })
-                                  .toList(),
-                        ),
-
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed:
-                                selectedHour != null && _selectedDay != null
-                                    ? () async {
-                                      debugPrint("Confirmar cita pressed");
-                                      await confirmAppointment();
-                                    }
-                                    : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.cyan,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text(
-                              "Confirmar cita",
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
+                        const SizedBox(height: 5),
+                        _buildHours(),
                       ],
                     ),
                   ),
@@ -469,6 +205,258 @@ class _DatePageState extends State<DatePage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCalendar() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: TableCalendar(
+        locale: 'es_ES',
+        firstDay: DateTime.utc(2020),
+        lastDay: DateTime.utc(2030),
+        focusedDay: _focusedDay,
+        enabledDayPredicate: (day) => !DateUtilsHelper.isDayInPast(day),
+        selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+        onDaySelected: (selected, focused) {
+          setState(() {
+            _selectedDay = selected;
+            _focusedDay = focused;
+            selectedHour = null;
+            errorHour = null;
+          });
+          fetchBookedHours(selected);
+        },
+        calendarStyle: CalendarStyle(
+          todayDecoration: BoxDecoration(
+            color: Colors.cyan.withOpacity(0.4),
+            shape: BoxShape.circle,
+          ),
+          selectedDecoration: const BoxDecoration(
+            color: Colors.cyan,
+            shape: BoxShape.circle,
+          ),
+        ),
+        headerStyle: const HeaderStyle(
+          titleCentered: true,
+          formatButtonVisible: false,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarbers() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _barberService.barbersStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Text("No hay barberos disponibles"),
+          );
+        }
+
+        return Column(
+          children:
+              snapshot.data!.docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final barberId = data['uid'];
+                final barberName = data['name'] ?? 'Barbero';
+                final photoUrl = data['photoUrl'];
+
+                final isSelected = selectedBarberId == barberId;
+
+                return GestureDetector(
+                  onTap: () => setState(() => selectedBarberId = barberId),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color:
+                          isSelected
+                              ? Colors.cyan.withOpacity(0.08)
+                              : Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isSelected ? Colors.cyan : Colors.transparent,
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 26,
+                          backgroundColor: Colors.cyan,
+                          backgroundImage:
+                              photoUrl != null ? NetworkImage(photoUrl) : null,
+                          child:
+                              photoUrl == null
+                                  ? Text(
+                                    barberName[0].toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  )
+                                  : null,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                barberName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Montserrat',
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                "Barbero",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                  fontFamily: 'Montserrat',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          opacity: isSelected ? 1 : 0,
+                          duration: const Duration(milliseconds: 150),
+                          child: const Icon(
+                            Icons.check_circle,
+                            color: Colors.cyan,
+                            size: 24,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildHours() {
+    if (_selectedDay == null) return const SizedBox();
+
+    return Column(
+      children:
+          hours
+              .where(
+                (hour) => !DateUtilsHelper.isHourInPast(_selectedDay!, hour),
+              )
+              .map((hour) {
+                final isSelected = selectedHour == hour;
+                final isError = errorHour == hour;
+
+                return GestureDetector(
+                  onTap: () async {
+                    final booked = await _appointmentService.isHourBooked(
+                      _selectedDay!,
+                      hour,
+                    );
+
+                    setState(() {
+                      if (booked) {
+                        selectedHour = null;
+                        errorHour = hour;
+                      } else {
+                        selectedHour = hour;
+                        errorHour = null;
+                      }
+                    });
+
+                    if (booked) {
+                      _showSnack("Esta hora ya fue reservada", Colors.red);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 14,
+                      horizontal: 18,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          isError
+                              ? Colors.red.shade50
+                              : isSelected
+                              ? Colors.cyan
+                              : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          color:
+                              isError
+                                  ? Colors.redAccent
+                                  : isSelected
+                                  ? Colors.white
+                                  : Colors.cyan,
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          hour,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                isError
+                                    ? Colors.redAccent
+                                    : isSelected
+                                    ? Colors.white
+                                    : Colors.black,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (isError)
+                          const Icon(Icons.error, color: Colors.redAccent)
+                        else if (isSelected)
+                          const Icon(Icons.check_circle, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                );
+              })
+              .toList(),
     );
   }
 }
